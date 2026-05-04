@@ -299,50 +299,10 @@ Backend для npm-виджета `homework-widget`, встраиваемого 
 
 MinIO bucket `homework-attachments`. Ключи: `submissions/{widget_id}/{submission_id}/{uuid}_{filename}`. Загрузка — multipart через api. Отдача — presigned URL. Каскадное удаление при удалении сабмишна / задания / виджета.
 
-## 11. Структура проекта
 
-```
-homework-widget-backend/
-├── docker-compose.yml
-├── Dockerfile
-├── pyproject.toml
-├── alembic/
-├── app/
-│   ├── main.py
-│   ├── config.py                # pydantic-settings
-│   ├── deps.py                  # current_user, db sessions
-│   ├── api/v1/
-│   │   ├── widgets.py
-│   │   ├── assignments.py
-│   │   ├── questions.py
-│   │   ├── homework.py
-│   │   ├── submissions.py
-│   │   └── attachments.py
-│   ├── models/                  # SQLAlchemy
-│   ├── schemas/                 # Pydantic v2
-│   ├── services/
-│   │   ├── widgets.py
-│   │   ├── assignments.py
-│   │   ├── auto_grader.py
-│   │   ├── ai_grader.py
-│   │   ├── widget_config.py     # сборка config-снапшотов + emit
-│   │   ├── stats.py
-│   │   ├── proxy_client.py
-│   │   └── storage.py           # MinIO
-│   ├── repositories/
-│   │   ├── submissions.py       # Mongo
-│   │   ├── ai_logs.py           # Mongo
-│   │   └── snapshots.py         # Mongo
-│   ├── workers/arq_worker.py
-│   ├── db/
-│   │   ├── postgres.py
-│   │   └── mongo.py
-│   └── core/
-│       └── access.py            # проверки роли/владельца
-└── tests/
-```
 
-## 12. Что НЕ входит в MVP
+
+## 11. Что НЕ входит в MVP
 
 - Точечные назначения заданий конкретным ученикам.
 - Снятие баллов за опоздание.
@@ -352,28 +312,60 @@ homework-widget-backend/
 - Уведомления.
 - CI/CD и деплой.
 
-## 13. План работ
+## 12. План работ
 
-**Этап 0 — каркас (1 день).** docker-compose (api, worker, postgres, mongo, redis, minio), FastAPI скелет, подключения ко всем БД, healthz/readyz, базовый pytest.
+**~~Этап 0 — каркас~~ ✅ ГОТОВО.**
+Реализовано: `docker-compose.yml` (api, worker, postgres, mongo, redis, minio), `Dockerfile` (targets api/worker), FastAPI-скелет (`app/main.py`, `app/config.py`, `app/deps.py`), подключения к БД (`app/db/postgres.py`, `app/db/mongo.py`), эндпоинты `GET /api/v1/healthz` и `GET /api/v1/readyz`, ARQ WorkerSettings-заглушка, дымовые тесты (2 passed). Вся структура директорий из ТЗ создана (`models/`, `schemas/`, `services/`, `repositories/`, `core/`, `api/v1/`).
+Ключевые решения: контекст пользователя — кастомные заголовки `X-User-Id`, `X-User-Role`, `X-Board-Id`, `X-Widget-Id`.
 
-**Этап 1 — виджеты и контекст (1–2 дня).** SQLAlchemy-модели widgets/assignments/questions/homework_details, миграции Alembic, идемпотентное создание виджета, `setInfo`, удаление с каскадом, контекст пользователя.
+**~~Этап 1 — виджеты и контекст~~ ✅ ГОТОВО.**
+Реализовано: SQLAlchemy-модели `Widget`, `Assignment`, `Question`, `HomeworkDetails`, `StatsModule` с `TimestampMixin`; Alembic-миграция применена (5 таблиц в БД); `app/services/widgets.py` — идемпотентный upsert по `(board_id, creator_user_id)`, get_or_404, delete; `app/core/access.py` — `require_teacher`, `require_widget_owner`; роутер `app/api/v1/widgets.py` — `POST /widgets`, `GET /widgets/{id}`, `POST /widgets/{id}/info`, `DELETE /widgets/{id}`.
 
-**Этап 2 — задания + widget:updated (2 дня).** CRUD assignments, сервис сборки config + снапшотов в Mongo, инкремент version, возврат `config` из соответствующих эндпоинтов.
+**Этап 2 — задания + widget:updated (2 дня).**
+- `app/schemas/assignment.py` — `AssignmentCreate`, `AssignmentUpdate`, `AssignmentOut` (без `correct_answer` для student).
+- `app/services/assignments.py` — CRUD: create, list (по `widget_id`), get_or_404, update, delete с каскадом (помечаем сабмишены в Mongo `assignment_deleted_at`, удаляем файлы MinIO — stub).
+- `app/repositories/snapshots.py` — `upsert_snapshot(widget_id, config, reason)`: `FindOneAndUpdate` с `$inc version`, запись в `widget_config_snapshots`.
+- `app/services/widget_config.py` — `build_config(session, widget_id)`: count заданий + последние 3 (title, type, deadline); вызывается синхронно из эндпоинтов создания/обновления/удаления задания.
+- `app/api/v1/assignments.py` — `POST /widgets/{id}/assignments`, `GET /widgets/{id}/assignments`, `GET /assignments/{id}`, `PATCH /assignments/{id}`, `DELETE /assignments/{id}`; каждый мутирующий эндпоинт возвращает обновлённый `config`.
 
-**Этап 3 — тесты (2 дня).** CRUD вопросов, репозиторий submissions в Mongo, авто-проверка, попытки, стратегии финальной оценки.
+**Этап 3 — тесты (2 дня).**
+- `app/schemas/question.py` — `QuestionCreate`, `QuestionUpdate`, `QuestionOut`; поле `correct_answer` скрывается для роли `student`.
+- `app/api/v1/questions.py` — `POST /assignments/{id}/questions`, `GET /assignments/{id}/questions`, `PATCH /questions/{id}`, `DELETE /questions/{id}` (только teacher).
+- `app/repositories/submissions.py` — `create_submission`, `get_by_id`, `list_by_assignment`, `list_by_student`; индексы из ТЗ.
+- `app/services/auto_grader.py` — авто-проверка теста: сравниваем ответы по типу вопроса (`single`/`multi`/`bool`/`short_text` с учётом `short_text_match`), считаем `final_score`; статус → `auto_graded`.
+- `app/api/v1/submissions.py` (частично) — `POST /assignments/{id}/submissions` для типа `test`: проверка `max_attempts`, `deadline`, авто-грейдинг, инкремент `attempt_number`; расчёт итогового балла по `final_score_strategy` (`last`/`best`/`average`) при отдаче.
 
-**Этап 4 — домашки + файлы (2 дня).** Эндпоинты homework, multipart-приём, MinIO storage, presigned URL, дедлайны и `is_late`.
+**Этап 4 — домашки + файлы (2 дня).**
+- `app/schemas/homework.py` — `HomeworkDetailsCreate/Update/Out`; `app/api/v1/homework.py` — `PUT /assignments/{id}/homework`, `GET /assignments/{id}/homework`.
+- `app/services/storage.py` — обёртка над MinIO: `upload_object(bucket, key, data, content_type)`, `delete_object(key)`, `presigned_get_url(key, ttl=300)`; создание бакета при старте если не существует.
+- `app/api/v1/submissions.py` (дополнение) — `POST /assignments/{id}/submissions` для типа `homework`: multipart/form-data, приём до 5 файлов ≤ 10 МБ, загрузка в MinIO по схеме `submissions/{widget_id}/{submission_id}/{uuid}_{filename}`, статус → `pending_ai`.
+- `app/api/v1/attachments.py` — `GET /attachments/{submission_id}/{attachment_index}`: проверка доступа, возврат presigned URL (TTL 5 мин).
+- Проверка дедлайна при сабмишне: `deadline` + `allow_late_submissions` → `is_late=true` или 409.
 
-**Этап 5 — AI-grader (2–3 дня).** ARQ воркер, Gemini через прокси, structured output, multimodal для картинок/pdf, `ai_logs` в Mongo, обработка ошибок.
+**Этап 5 — AI-grader (2–3 дня).**
+- `app/services/proxy_client.py` — тонкий `httpx.AsyncClient` с `proxies=settings.proxy_url`; используется для всех исходящих запросов.
+- `app/services/ai_grader.py` — вызов Gemini 2.5 Flash через `google-genai` SDK + прокси: формирование промпта (текст + файлы multimodal), structured output по JSON-схеме `{score, feedback, rubric_breakdown}`, temperature 0.2.
+- `app/repositories/ai_logs.py` — `create_log(submission_id, request, response, latency_ms, status, error)`.
+- `app/workers/arq_worker.py` — задача `grade_submission(ctx, submission_id)`: загружаем сабмишен, вызываем `ai_grader`, пишем результат в `grading.ai`, статус → `pending_teacher`; при ошибке парсинга/таймауте — статус `pending_teacher` без AI-данных, лог с error.
+- Регистрация задачи в `WorkerSettings.functions`; при создании homework-сабмишена ставим задачу в очередь через `arq.create_pool`.
 
-**Этап 6 — интерфейс препода (1 день).** `PATCH /submissions/{id}/grade`, фильтрация полей для student/teacher, проверки владения.
+**Этап 6 — интерфейс препода (1 день).**
+- `app/schemas/submission.py` — `SubmissionOut` с двумя проекциями: для teacher (включает `grading.ai`) и для student (только `grading.final` после утверждения, статус `pending_teacher` → «на проверке»).
+- `PATCH /submissions/{id}/grade` — тело `{score?, feedback?, accept_ai: bool}`: если `accept_ai=true` — копируем AI-оценку в `final`; иначе берём переданные `score`/`feedback`; статус → `graded`.
+- `GET /assignments/{id}/submissions` — teacher видит все, student только свои (`student_user_id == user.user_id`).
+- `GET /submissions/{id}` — проверка доступа: teacher-владелец виджета или student-автор сабмишена.
 
-**Этап 7 — StatService (1 день).** Регистрация модуля, периодическая отправка агрегатов через прокси, обработка 401/404/429.
+**Этап 7 — StatService (1 день).**
+- `app/services/stats.py` — `register_module()`: `POST /api/stats/module/create` через прокси, сохранение `module_id`/`token` в таблицу `stats_module`; идемпотентно (если запись есть — пропуск).
+- ARQ крон-задача `send_metrics()` (каждые N минут): агрегация по активным виджетам (`widgetId`, `assignmentsCount`, `submissionsCount`, `gradedCount`, `averageScore`, `lastActivityAt`), `PUT /api/stats/module/metrics`.
+- Обработка ответов StatService: 401 → перерегистрация (`register_module()`); 429 → `asyncio.sleep(Retry-After)`; 404 → пропуск виджета.
+- Запуск `register_module()` при старте api через lifespan (после проверки соединений).
 
-**Этап 8 — тесты и доводка (2 дня).** Юнит и интеграционные тесты ключевых сценариев, OpenAPI описание, README с инструкцией запуска.
+**Этап 8 — тесты и доводка (2 дня).**
+- Интеграционные тесты (pytest + `AsyncClient`) ключевых сценариев: создание виджета → задание → сабмишен теста → авто-грейдинг; домашка → `pending_ai` → grade препода.
+- Проверка изоляции student/teacher: student не получает `correct_answer`, не видит чужие сабмишены, не видит AI-оценку.
+- OpenAPI: теги, `summary`, примеры схем для основных эндпоинтов.
+- `README.md` — инструкция запуска (`docker compose up --build`), переменные окружения, примеры curl-запросов.
+- Финальный прогон `pytest` и `docker compose up` smoke-проверка всего стека.
 
 Итого: ~14 рабочих дней.
-
----
-
-Глянь — особенно по разделам 5 (модели), 6.2 (триггеры `widget:updated`) и 7 (API). Если всё ок — фиксируем и можем начинать с этапа 0.
