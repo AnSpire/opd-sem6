@@ -6,6 +6,7 @@ from app.db.postgres import get_session
 from app.deps import UserContext, get_current_user
 from app.schemas.widget import WidgetCreate, WidgetOut
 from app.services import widgets as widget_service
+from app.services.widget_config import emit_widget_updated
 
 router = APIRouter(prefix="/widgets", tags=["widgets"])
 
@@ -17,7 +18,9 @@ async def create_widget(
     session: AsyncSession = Depends(get_session),
 ):
     require_teacher(user)
-    widget, _ = await widget_service.upsert_widget(session, body.id, body.board_id, user.user_id)
+    widget, created = await widget_service.upsert_widget(session, body.id, body.board_id, user.user_id)
+    if created:
+        await emit_widget_updated(session, widget.id, "widget_created")
     return widget
 
 
