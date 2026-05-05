@@ -40,7 +40,7 @@ async def app_startup():
     mongo.client = AsyncIOMotorClient(
         settings.mongo_uri,
         serverSelectionTimeoutMS=3000,
-        connectionTimeoutMS=3000
+        connectTimeoutMS=3000,
     )
     yield
     mongo.client.close()
@@ -71,6 +71,8 @@ async def clean_db(app_startup):
         await conn.execute("TRUNCATE TABLE widgets CASCADE")
     finally:
         await conn.close()
+    from app.db.mongo import get_db
+    await get_db().submissions.delete_many({})
     yield
 
 
@@ -107,6 +109,16 @@ ASSIGNMENT_PAYLOAD = {
     "final_score_strategy": "best",
 }
 
+QUESTION_PAYLOAD = {
+    "order": 1,
+    "text": "What is 2 + 2?",
+    "type": "single",
+    "options": ["3", "4", "5"],
+    "correct_answer": ["4"],
+    "points": 5,
+    "short_text_match": "exact",
+}
+
 
 @pytest_asyncio.fixture
 async def widget(client, teacher_headers):
@@ -124,3 +136,14 @@ async def assignment(client, widget, teacher_headers):
     )
     assert r.status_code == 201
     return r.json()["assignment"]
+
+
+@pytest_asyncio.fixture
+async def question(client, assignment, teacher_headers):
+    r = await client.post(
+        f"/api/v1/assignments/{assignment['id']}/questions",
+        json=QUESTION_PAYLOAD,
+        headers=teacher_headers,
+    )
+    assert r.status_code == 201
+    return r.json()

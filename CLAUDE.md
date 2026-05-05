@@ -321,19 +321,11 @@ MinIO bucket `homework-attachments`. Ключи: `submissions/{widget_id}/{submi
 **~~Этап 1 — виджеты и контекст~~ ✅ ГОТОВО.**
 Реализовано: SQLAlchemy-модели `Widget`, `Assignment`, `Question`, `HomeworkDetails`, `StatsModule` с `TimestampMixin`; Alembic-миграция применена (5 таблиц в БД); `app/services/widgets.py` — идемпотентный upsert по `(board_id, creator_user_id)`, get_or_404, delete; `app/core/access.py` — `require_teacher`, `require_widget_owner`; роутер `app/api/v1/widgets.py` — `POST /widgets`, `GET /widgets/{id}`, `POST /widgets/{id}/info`, `DELETE /widgets/{id}`.
 
-**Этап 2 — задания + widget:updated (2 дня).**
-- `app/schemas/assignment.py` — `AssignmentCreate`, `AssignmentUpdate`, `AssignmentOut` (без `correct_answer` для student).
-- `app/services/assignments.py` — CRUD: create, list (по `widget_id`), get_or_404, update, delete с каскадом (помечаем сабмишены в Mongo `assignment_deleted_at`, удаляем файлы MinIO — stub).
-- `app/repositories/snapshots.py` — `upsert_snapshot(widget_id, config, reason)`: `FindOneAndUpdate` с `$inc version`, запись в `widget_config_snapshots`.
-- `app/services/widget_config.py` — `build_config(session, widget_id)`: count заданий + последние 3 (title, type, deadline); вызывается синхронно из эндпоинтов создания/обновления/удаления задания.
-- `app/api/v1/assignments.py` — `POST /widgets/{id}/assignments`, `GET /widgets/{id}/assignments`, `GET /assignments/{id}`, `PATCH /assignments/{id}`, `DELETE /assignments/{id}`; каждый мутирующий эндпоинт возвращает обновлённый `config`.
+**~~Этап 2 — задания + widget:updated~~ ✅ ГОТОВО.**
+Реализовано: `app/schemas/assignment.py` (`AssignmentCreate/Update/Out`, `AssignmentPreview`, `WidgetConfigOut`, `AssignmentWithConfigOut`, `ConfigOut`); `app/services/assignments.py` — полный CRUD; `app/repositories/snapshots.py` — `upsert_snapshot` с `$inc version`; `app/services/widget_config.py` — `build_config` + `emit_widget_updated`; роутер `app/api/v1/assignments.py` — все 5 эндпоинтов; `tests/test_assignments.py` (23 теста, все зелёные). Исправлен баг `connectionTimeoutMS` → `connectTimeoutMS` в `conftest.py`.
 
-**Этап 3 — тесты (2 дня).**
-- `app/schemas/question.py` — `QuestionCreate`, `QuestionUpdate`, `QuestionOut`; поле `correct_answer` скрывается для роли `student`.
-- `app/api/v1/questions.py` — `POST /assignments/{id}/questions`, `GET /assignments/{id}/questions`, `PATCH /questions/{id}`, `DELETE /questions/{id}` (только teacher).
-- `app/repositories/submissions.py` — `create_submission`, `get_by_id`, `list_by_assignment`, `list_by_student`; индексы из ТЗ.
-- `app/services/auto_grader.py` — авто-проверка теста: сравниваем ответы по типу вопроса (`single`/`multi`/`bool`/`short_text` с учётом `short_text_match`), считаем `final_score`; статус → `auto_graded`.
-- `app/api/v1/submissions.py` (частично) — `POST /assignments/{id}/submissions` для типа `test`: проверка `max_attempts`, `deadline`, авто-грейдинг, инкремент `attempt_number`; расчёт итогового балла по `final_score_strategy` (`last`/`best`/`average`) при отдаче.
+**~~Этап 3 — тесты~~ ✅ ГОТОВО.**
+Реализовано: `app/schemas/question.py`, `app/services/questions.py`, роутер `app/api/v1/questions.py` — CRUD вопросов, `correct_answer` скрыт для student; `app/repositories/submissions.py` — полный репозиторий с MongoDB-индексами; `app/services/auto_grader.py` — авто-грейдинг single/multi/bool/short_text; `app/schemas/submission.py`; `app/api/v1/submissions.py` — POST/GET сабмишенов для тестов, дедлайны, max_attempts, final_score_strategy (last/best/average); `tests/test_questions.py` (15 тестов), `tests/test_submissions_test.py` (17 тестов). Итого 68 тестов — все зелёные.
 
 **Этап 4 — домашки + файлы (2 дня).**
 - `app/schemas/homework.py` — `HomeworkDetailsCreate/Update/Out`; `app/api/v1/homework.py` — `PUT /assignments/{id}/homework`, `GET /assignments/{id}/homework`.
@@ -368,4 +360,70 @@ MinIO bucket `homework-attachments`. Ключи: `submissions/{widget_id}/{submi
 - `README.md` — инструкция запуска (`docker compose up --build`), переменные окружения, примеры curl-запросов.
 - Финальный прогон `pytest` и `docker compose up` smoke-проверка всего стека.
 
-Итого: ~14 рабочих дней.
+# Исправления в тестовом окружении
+
+## 1. Раздельные конфиги для тестов и контейнеров
+
+**Проблема:** один `.env` использовался и контейнерами, и тестами. Внутри Docker нужны имена сервисов (`postgres:5432`, `mongo:27017`), а с хоста — `localhost` с проброшенными портами (`localhost:5433`, `localhost:27018`). Тесты зависали, потому что пытались подключиться к недоступным адресам.
+
+**Решение:** создан отдельный `.env.test` с хостовыми адресами и проброшенными портами.
+
+## 2. load_dotenv строго до импортов app.*
+
+**Проблема:** `pydantic-settings` инстанцирует `Settings()` в момент импорта `app.config`. Если `load_dotenv` стоит после — `.env.test` не применяется, настройки берутся из `.env`.
+
+**Решение:** в `conftest.py` `load_dotenv` перенесён в самый верх, до любых импортов из `app.*`:
+
+```python
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env.test", override=True)
+
+from app.config import settings  # только после
+```
+
+## 3. authSource=admin в MONGO_URI
+
+**Проблема:** root-пользователь Mongo живёт в БД `admin`. Без `?authSource=admin` аутентификация молча зависала при обращении к другим БД.
+
+**Решение:** добавлен параметр в URI:
+MONGO_URI=mongodb://mongo:mongo@localhost:27018/?authSource=admin
+## 4. Миграции против тестовой БД
+
+**Проблема:** тестовая БД была пустой, таблицы не существовали — все тесты падали с `relation "widgets" does not exist`.
+
+**Решение:** перед первым запуском тестов применены миграции:
+
+```bash
+set -a; source .env.test; set +a
+uv run alembic upgrade head
+```
+
+## 5. Event loop scope
+
+**Проблема:** фикстуры были session-scoped, а тесты запускались в function-scoped loop. Соединения asyncpg и Motor привязывались к session-loop, тесты исполнялись в новом function-loop — отсюда `RuntimeError: Task got Future attached to a different loop`.
+
+**Решение:** в `pyproject.toml` выровнены оба scope:
+
+```toml
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+```
+
+## 6. Таймауты подключения
+
+**Проблема:** asyncpg и Motor по умолчанию не имеют коротких таймаутов — недоступный сервис вызывал молчаливое зависание вместо внятной ошибки.
+
+**Решение:** явные таймауты в `conftest.py`:
+
+```python
+mongo.client = AsyncIOMotorClient(
+    settings.mongo_uri,
+    serverSelectionTimeoutMS=3000,
+    connectTimeoutMS=3000,
+)
+
+conn = await asyncpg.connect(_pg_dsn(), timeout=3)
+```
