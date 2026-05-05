@@ -6,12 +6,12 @@ from app.db import mongo, postgres
 router = APIRouter(tags=["health"])
 
 
-@router.get("/healthz")
+@router.get("/healthz", summary="Liveness probe")
 async def healthz():
     return {"status": "ok"}
 
 
-@router.get("/readyz")
+@router.get("/readyz", summary="Readiness probe — проверяет подключения к Postgres и MongoDB")
 async def readyz(response: Response):
     checks: dict[str, str] = {}
     ok = True

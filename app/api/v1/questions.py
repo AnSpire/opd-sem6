@@ -18,7 +18,8 @@ async def _resolve_widget_for_assignment(session: AsyncSession, assignment_id: i
     return assignment, widget
 
 
-@router.post("/assignments/{assignment_id}/questions", response_model=QuestionOut, status_code=201)
+@router.post("/assignments/{assignment_id}/questions", response_model=QuestionOut, status_code=201,
+             summary="Добавить вопрос к тесту (только владелец-препод)")
 async def create_question(
     assignment_id: int,
     body: QuestionCreate,
@@ -31,7 +32,8 @@ async def create_question(
     return await question_service.create_question(session, assignment_id, body)
 
 
-@router.get("/assignments/{assignment_id}/questions", response_model=list[QuestionOut])
+@router.get("/assignments/{assignment_id}/questions", response_model=list[QuestionOut],
+            summary="Список вопросов теста (correct_answer скрыт для студентов)")
 async def list_questions(
     assignment_id: int,
     user: UserContext = Depends(get_current_user),
@@ -45,7 +47,8 @@ async def list_questions(
     return questions
 
 
-@router.patch("/questions/{question_id}", response_model=QuestionOut)
+@router.patch("/questions/{question_id}", response_model=QuestionOut,
+              summary="Обновить вопрос (только владелец-препод)")
 async def update_question(
     question_id: int,
     body: QuestionUpdate,
@@ -59,7 +62,8 @@ async def update_question(
     return await question_service.update_question(session, question, body)
 
 
-@router.delete("/questions/{question_id}", status_code=204)
+@router.delete("/questions/{question_id}", status_code=204,
+               summary="Удалить вопрос (только владелец-препод)")
 async def delete_question(
     question_id: int,
     user: UserContext = Depends(get_current_user),

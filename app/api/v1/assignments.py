@@ -18,7 +18,8 @@ from app.services.widget_config import emit_widget_updated
 router = APIRouter(tags=["assignments"])
 
 
-@router.post("/widgets/{widget_id}/assignments", response_model=AssignmentWithConfigOut, status_code=201)
+@router.post("/widgets/{widget_id}/assignments", response_model=AssignmentWithConfigOut, status_code=201,
+             summary="Создать задание в виджете (только владелец-препод)")
 async def create_assignment(
     widget_id: int,
     body: AssignmentCreate,
@@ -33,7 +34,8 @@ async def create_assignment(
     return AssignmentWithConfigOut(assignment=AssignmentOut.model_validate(assignment), config=config)
 
 
-@router.get("/widgets/{widget_id}/assignments", response_model=list[AssignmentOut])
+@router.get("/widgets/{widget_id}/assignments", response_model=list[AssignmentOut],
+            summary="Список всех заданий виджета")
 async def list_assignments(
     widget_id: int,
     _user: UserContext = Depends(get_current_user),
@@ -43,7 +45,8 @@ async def list_assignments(
     return await assignment_service.list_assignments(session, widget_id)
 
 
-@router.get("/assignments/{assignment_id}", response_model=AssignmentOut)
+@router.get("/assignments/{assignment_id}", response_model=AssignmentOut,
+            summary="Получить задание по ID")
 async def get_assignment(
     assignment_id: int,
     _user: UserContext = Depends(get_current_user),
@@ -52,7 +55,8 @@ async def get_assignment(
     return await assignment_service.get_assignment_or_404(session, assignment_id)
 
 
-@router.patch("/assignments/{assignment_id}", response_model=AssignmentWithConfigOut)
+@router.patch("/assignments/{assignment_id}", response_model=AssignmentWithConfigOut,
+              summary="Обновить задание (только владелец-препод)")
 async def update_assignment(
     assignment_id: int,
     body: AssignmentUpdate,
@@ -68,7 +72,8 @@ async def update_assignment(
     return AssignmentWithConfigOut(assignment=AssignmentOut.model_validate(assignment), config=config)
 
 
-@router.delete("/assignments/{assignment_id}", response_model=ConfigOut)
+@router.delete("/assignments/{assignment_id}", response_model=ConfigOut,
+               summary="Удалить задание и вернуть обновлённый config (только владелец-препод)")
 async def delete_assignment(
     assignment_id: int,
     user: UserContext = Depends(get_current_user),

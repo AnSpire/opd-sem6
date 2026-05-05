@@ -11,7 +11,8 @@ from app.services.widget_config import emit_widget_updated
 router = APIRouter(prefix="/widgets", tags=["widgets"])
 
 
-@router.post("", response_model=WidgetOut, status_code=201)
+@router.post("", response_model=WidgetOut, status_code=201,
+             summary="Создать виджет (идемпотентно по board_id + creator)")
 async def create_widget(
     body: WidgetCreate,
     user: UserContext = Depends(get_current_user),
@@ -24,7 +25,8 @@ async def create_widget(
     return widget
 
 
-@router.get("/{widget_id}", response_model=WidgetOut)
+@router.get("/{widget_id}", response_model=WidgetOut,
+            summary="Получить виджет по ID")
 async def get_widget(
     widget_id: int,
     user: UserContext = Depends(get_current_user),
@@ -33,7 +35,8 @@ async def get_widget(
     return await widget_service.get_widget_or_404(session, widget_id)
 
 
-@router.post("/{widget_id}/info", response_model=WidgetOut)
+@router.post("/{widget_id}/info", response_model=WidgetOut,
+             summary="setInfo — обновить контекст виджета от фронта")
 async def set_info(
     widget_id: int,
     user: UserContext = Depends(get_current_user),
@@ -42,7 +45,8 @@ async def set_info(
     return await widget_service.get_widget_or_404(session, widget_id)
 
 
-@router.delete("/{widget_id}", status_code=204)
+@router.delete("/{widget_id}", status_code=204,
+               summary="Удалить виджет и все его задания (только владелец)")
 async def delete_widget(
     widget_id: int,
     user: UserContext = Depends(get_current_user),

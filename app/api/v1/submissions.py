@@ -55,7 +55,8 @@ def _to_out(doc: dict, effective_score: int | None) -> SubmissionOut:
     )
 
 
-@router.post("/assignments/{assignment_id}/submissions", response_model=SubmissionOut, status_code=201)
+@router.post("/assignments/{assignment_id}/submissions", response_model=SubmissionOut, status_code=201,
+             summary="Сдать тест — автоматически проверяет ответы и возвращает результат")
 async def create_submission(
     assignment_id: int,
     body: TestSubmissionCreate,
@@ -112,7 +113,8 @@ async def create_submission(
     return _to_out(created, eff)
 
 
-@router.get("/assignments/{assignment_id}/submissions", response_model=list[SubmissionOut])
+@router.get("/assignments/{assignment_id}/submissions", response_model=list[SubmissionOut],
+            summary="Список сдач по заданию (препод видит все, студент — только свои)")
 async def list_submissions(
     assignment_id: int,
     user: UserContext = Depends(get_current_user),
@@ -138,7 +140,8 @@ async def list_submissions(
     return result
 
 
-@router.get("/submissions/{submission_id}", response_model=SubmissionOut)
+@router.get("/submissions/{submission_id}", response_model=SubmissionOut,
+            summary="Получить сдачу по ID (препод-владелец или студент-автор)")
 async def get_submission(
     submission_id: str,
     user: UserContext = Depends(get_current_user),
