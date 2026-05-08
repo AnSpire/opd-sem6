@@ -12,6 +12,7 @@ async def upsert_widget(
     creator_user_id: int,
 ) -> tuple[Widget, bool]:
     """Return (widget, created). Idempotent by (board_id, creator_user_id)."""
+    print("BOARD_ID: " + str(board_id))
     stmt = select(Widget).where(
         Widget.board_id == board_id,
         Widget.creator_user_id == creator_user_id,

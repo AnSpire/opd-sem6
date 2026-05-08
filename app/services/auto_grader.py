@@ -10,7 +10,7 @@ def grade_answers(
     graded_answers: [{question_id, answer, is_correct, points_awarded}]
     """
     by_id = {q.id: q for q in questions}
-    graded = []
+    graded: list[dict] = []
     total = 0
 
     for item in raw_answers:
