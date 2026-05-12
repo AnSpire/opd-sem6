@@ -299,50 +299,10 @@ Backend для npm-виджета `homework-widget`, встраиваемого 
 
 MinIO bucket `homework-attachments`. Ключи: `submissions/{widget_id}/{submission_id}/{uuid}_{filename}`. Загрузка — multipart через api. Отдача — presigned URL. Каскадное удаление при удалении сабмишна / задания / виджета.
 
-## 11. Структура проекта
 
-```
-homework-widget-backend/
-├── docker-compose.yml
-├── Dockerfile
-├── pyproject.toml
-├── alembic/
-├── app/
-│   ├── main.py
-│   ├── config.py                # pydantic-settings
-│   ├── deps.py                  # current_user, db sessions
-│   ├── api/v1/
-│   │   ├── widgets.py
-│   │   ├── assignments.py
-│   │   ├── questions.py
-│   │   ├── homework.py
-│   │   ├── submissions.py
-│   │   └── attachments.py
-│   ├── models/                  # SQLAlchemy
-│   ├── schemas/                 # Pydantic v2
-│   ├── services/
-│   │   ├── widgets.py
-│   │   ├── assignments.py
-│   │   ├── auto_grader.py
-│   │   ├── ai_grader.py
-│   │   ├── widget_config.py     # сборка config-снапшотов + emit
-│   │   ├── stats.py
-│   │   ├── proxy_client.py
-│   │   └── storage.py           # MinIO
-│   ├── repositories/
-│   │   ├── submissions.py       # Mongo
-│   │   ├── ai_logs.py           # Mongo
-│   │   └── snapshots.py         # Mongo
-│   ├── workers/arq_worker.py
-│   ├── db/
-│   │   ├── postgres.py
-│   │   └── mongo.py
-│   └── core/
-│       └── access.py            # проверки роли/владельца
-└── tests/
-```
 
-## 12. Что НЕ входит в MVP
+
+## 11. Что НЕ входит в MVP
 
 - Точечные назначения заданий конкретным ученикам.
 - Снятие баллов за опоздание.
@@ -352,28 +312,107 @@ homework-widget-backend/
 - Уведомления.
 - CI/CD и деплой.
 
-## 13. План работ
+## 12. План работ
 
-**Этап 0 — каркас (1 день).** docker-compose (api, worker, postgres, mongo, redis, minio), FastAPI скелет, подключения ко всем БД, healthz/readyz, базовый pytest.
+**~~Этап 0 — каркас~~ ✅ ГОТОВО.**
+Реализовано: `docker-compose.yml` (api, worker, postgres, mongo, redis, minio), `Dockerfile` (targets api/worker), FastAPI-скелет (`app/main.py`, `app/config.py`, `app/deps.py`), подключения к БД (`app/db/postgres.py`, `app/db/mongo.py`), эндпоинты `GET /api/v1/healthz` и `GET /api/v1/readyz`, ARQ WorkerSettings-заглушка, дымовые тесты (2 passed). Вся структура директорий из ТЗ создана (`models/`, `schemas/`, `services/`, `repositories/`, `core/`, `api/v1/`).
+Ключевые решения: контекст пользователя — кастомные заголовки `X-User-Id`, `X-User-Role`, `X-Board-Id`, `X-Widget-Id`.
 
-**Этап 1 — виджеты и контекст (1–2 дня).** SQLAlchemy-модели widgets/assignments/questions/homework_details, миграции Alembic, идемпотентное создание виджета, `setInfo`, удаление с каскадом, контекст пользователя.
+**~~Этап 1 — виджеты и контекст~~ ✅ ГОТОВО.**
+Реализовано: SQLAlchemy-модели `Widget`, `Assignment`, `Question`, `HomeworkDetails`, `StatsModule` с `TimestampMixin`; Alembic-миграция применена (5 таблиц в БД); `app/services/widgets.py` — идемпотентный upsert по `(board_id, creator_user_id)`, get_or_404, delete; `app/core/access.py` — `require_teacher`, `require_widget_owner`; роутер `app/api/v1/widgets.py` — `POST /widgets`, `GET /widgets/{id}`, `POST /widgets/{id}/info`, `DELETE /widgets/{id}`.
 
-**Этап 2 — задания + widget:updated (2 дня).** CRUD assignments, сервис сборки config + снапшотов в Mongo, инкремент version, возврат `config` из соответствующих эндпоинтов.
+**~~Этап 2 — задания + widget:updated~~ ✅ ГОТОВО.**
+Реализовано: `app/schemas/assignment.py` (`AssignmentCreate/Update/Out`, `AssignmentPreview`, `WidgetConfigOut`, `AssignmentWithConfigOut`, `ConfigOut`); `app/services/assignments.py` — полный CRUD; `app/repositories/snapshots.py` — `upsert_snapshot` с `$inc version`; `app/services/widget_config.py` — `build_config` + `emit_widget_updated`; роутер `app/api/v1/assignments.py` — все 5 эндпоинтов; `tests/test_assignments.py` (23 теста, все зелёные). Исправлен баг `connectionTimeoutMS` → `connectTimeoutMS` в `conftest.py`.
 
-**Этап 3 — тесты (2 дня).** CRUD вопросов, репозиторий submissions в Mongo, авто-проверка, попытки, стратегии финальной оценки.
+**~~Этап 3 — тесты~~ ✅ ГОТОВО.**
+Реализовано: `app/schemas/question.py`, `app/services/questions.py`, роутер `app/api/v1/questions.py` — CRUD вопросов, `correct_answer` скрыт для student; `app/repositories/submissions.py` — полный репозиторий с MongoDB-индексами; `app/services/auto_grader.py` — авто-грейдинг single/multi/bool/short_text; `app/schemas/submission.py`; `app/api/v1/submissions.py` — POST/GET сабмишенов для тестов, дедлайны, max_attempts, final_score_strategy (last/best/average); `tests/test_questions.py` (15 тестов), `tests/test_submissions_test.py` (17 тестов). Итого 68 тестов — все зелёные.
 
-**Этап 4 — домашки + файлы (2 дня).** Эндпоинты homework, multipart-приём, MinIO storage, presigned URL, дедлайны и `is_late`.
+**~~Этап 4 — домашки + файлы~~ ✅ ГОТОВО.**
+Реализовано: `app/schemas/homework.py`, `app/services/homework.py` — upsert homework_details; `app/api/v1/homework.py` — `PUT/GET /assignments/{id}/homework`; `app/services/storage.py` — MinIO-обёртка (`upload_object`, `delete_object`, `download_object`, `presigned_get_url`) через `run_in_executor`; `app/api/v1/submissions.py` — multipart homework-сабмишены, до 5 файлов ≤ 10 МБ, контент-тип диспатч (JSON → test, остальное → homework); `app/api/v1/attachments.py` — presigned URL с проверкой доступа; дедлайн + `allow_late_submissions` + `max_attempts`. Тесты: `test_homework.py` (11), `test_submissions_homework.py` (12), `test_attachments.py` (7).
 
-**Этап 5 — AI-grader (2–3 дня).** ARQ воркер, Gemini через прокси, structured output, multimodal для картинок/pdf, `ai_logs` в Mongo, обработка ошибок.
+**~~Этап 5 — AI-grader~~ ✅ ГОТОВО.**
+Реализовано: `app/services/proxy_client.py` — httpx-клиент с опциональным прокси; `app/services/ai_grader.py` — Gemini 2.5 Flash через `google-genai` SDK, multimodal (текст + PDF/image из MinIO), structured output `GradingResult`, `run_in_executor` для синхронного SDK; `app/repositories/ai_logs.py` — запись каждого вызова; `app/workers/arq_worker.py` — задача `grade_submission`: ok → `grading.ai` + `pending_teacher`; ValueError → `parse_error`; TimeoutError → `timeout`; Exception → `api_error`; всегда пишет ai_log; `app/db/arq_pool.py` — синглтон пула; lifespan инициализирует пул и enqueue при homework-сабмишене. Ключевое решение: воркер-контейнер нужно пересоздавать при первом добавлении функций (`docker compose up -d worker`). Тесты: `test_ai_grader.py` (4), `test_arq_worker.py` (4).
 
-**Этап 6 — интерфейс препода (1 день).** `PATCH /submissions/{id}/grade`, фильтрация полей для student/teacher, проверки владения.
+**~~Этап 6 — интерфейс препода~~ ✅ ГОТОВО.**
+Реализовано: `GradeSubmissionBody` в `app/schemas/submission.py`; `set_final_grade()` в `app/repositories/submissions.py`; `_to_out(hide_ai=False)` — параметр скрывает `grading.ai` для студентов; `PATCH /submissions/{id}/grade` — `accept_ai=true` копирует AI-оценку, `accept_ai=false` требует явных `score`/`feedback`, статус → `graded`; `GET /submissions/{id}` и `GET /assignments/{id}/submissions` передают `hide_ai=(role != "teacher")`. Итого 105 тестов — все зелёные.
 
-**Этап 7 — StatService (1 день).** Регистрация модуля, периодическая отправка агрегатов через прокси, обработка 401/404/429.
+**Этап 7 — StatService (1 день).**
+- `app/services/stats.py` — `register_module()`: `POST /api/stats/module/create` через прокси, сохранение `module_id`/`token` в таблицу `stats_module`; идемпотентно (если запись есть — пропуск).
+- ARQ крон-задача `send_metrics()` (каждые N минут): агрегация по активным виджетам (`widgetId`, `assignmentsCount`, `submissionsCount`, `gradedCount`, `averageScore`, `lastActivityAt`), `PUT /api/stats/module/metrics`.
+- Обработка ответов StatService: 401 → перерегистрация (`register_module()`); 429 → `asyncio.sleep(Retry-After)`; 404 → пропуск виджета.
+- Запуск `register_module()` при старте api через lifespan (после проверки соединений).
 
-**Этап 8 — тесты и доводка (2 дня).** Юнит и интеграционные тесты ключевых сценариев, OpenAPI описание, README с инструкцией запуска.
+**Этап 8 — тесты и доводка (2 дня).**
+- Интеграционные тесты (pytest + `AsyncClient`) ключевых сценариев: создание виджета → задание → сабмишен теста → авто-грейдинг; домашка → `pending_ai` → grade препода.
+- Проверка изоляции student/teacher: student не получает `correct_answer`, не видит чужие сабмишены, не видит AI-оценку.
+- OpenAPI: теги, `summary`, примеры схем для основных эндпоинтов.
+- `README.md` — инструкция запуска (`docker compose up --build`), переменные окружения, примеры curl-запросов.
+- Финальный прогон `pytest` и `docker compose up` smoke-проверка всего стека.
 
-Итого: ~14 рабочих дней.
+# Исправления в тестовом окружении
 
----
+## 1. Раздельные конфиги для тестов и контейнеров
 
-Глянь — особенно по разделам 5 (модели), 6.2 (триггеры `widget:updated`) и 7 (API). Если всё ок — фиксируем и можем начинать с этапа 0.
+**Проблема:** один `.env` использовался и контейнерами, и тестами. Внутри Docker нужны имена сервисов (`postgres:5432`, `mongo:27017`), а с хоста — `localhost` с проброшенными портами (`localhost:5433`, `localhost:27018`). Тесты зависали, потому что пытались подключиться к недоступным адресам.
+
+**Решение:** создан отдельный `.env.test` с хостовыми адресами и проброшенными портами.
+
+## 2. load_dotenv строго до импортов app.*
+
+**Проблема:** `pydantic-settings` инстанцирует `Settings()` в момент импорта `app.config`. Если `load_dotenv` стоит после — `.env.test` не применяется, настройки берутся из `.env`.
+
+**Решение:** в `conftest.py` `load_dotenv` перенесён в самый верх, до любых импортов из `app.*`:
+
+```python
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent / ".env.test", override=True)
+
+from app.config import settings  # только после
+```
+
+## 3. authSource=admin в MONGO_URI
+
+**Проблема:** root-пользователь Mongo живёт в БД `admin`. Без `?authSource=admin` аутентификация молча зависала при обращении к другим БД.
+
+**Решение:** добавлен параметр в URI:
+MONGO_URI=mongodb://mongo:mongo@localhost:27018/?authSource=admin
+## 4. Миграции против тестовой БД
+
+**Проблема:** тестовая БД была пустой, таблицы не существовали — все тесты падали с `relation "widgets" does not exist`.
+
+**Решение:** перед первым запуском тестов применены миграции:
+
+```bash
+set -a; source .env.test; set +a
+uv run alembic upgrade head
+```
+
+## 5. Event loop scope
+
+**Проблема:** фикстуры были session-scoped, а тесты запускались в function-scoped loop. Соединения asyncpg и Motor привязывались к session-loop, тесты исполнялись в новом function-loop — отсюда `RuntimeError: Task got Future attached to a different loop`.
+
+**Решение:** в `pyproject.toml` выровнены оба scope:
+
+```toml
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+```
+
+## 6. Таймауты подключения
+
+**Проблема:** asyncpg и Motor по умолчанию не имеют коротких таймаутов — недоступный сервис вызывал молчаливое зависание вместо внятной ошибки.
+
+**Решение:** явные таймауты в `conftest.py`:
+
+```python
+mongo.client = AsyncIOMotorClient(
+    settings.mongo_uri,
+    serverSelectionTimeoutMS=3000,
+    connectTimeoutMS=3000,
+)
+
+conn = await asyncpg.connect(_pg_dsn(), timeout=3)
+```
