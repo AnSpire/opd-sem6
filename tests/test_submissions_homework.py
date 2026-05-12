@@ -281,3 +281,41 @@ async def test_submit_homework_enqueues_grade_job(client, hw_details, hw_assignm
     assert r.status_code == 201
     submission_id = r.json()["id"]
     mock_pool.enqueue_job.assert_awaited_once_with("grade_submission", submission_id)
+
+
+async def test_student_submission_response_hides_ai_grading(client, hw_details, hw_assignment):
+    """Student's submission response must never expose grading.ai."""
+    with patch("app.services.storage.upload_object", new_callable=AsyncMock):
+        r = await client.post(
+            f"/api/v1/assignments/{hw_assignment['id']}/submissions",
+            data={"text": "My answer"},
+            headers=STUDENT_HEADERS,
+        )
+    assert r.status_code == 201
+    assert r.json()["grading"]["ai"] is None
+
+
+async def test_student_get_submission_hides_ai_grading(client, hw_details, hw_assignment):
+    """Student's GET /submissions/{id} must not expose grading.ai even after AI processes it."""
+    with patch("app.services.storage.upload_object", new_callable=AsyncMock):
+        r = await client.post(
+            f"/api/v1/assignments/{hw_assignment['id']}/submissions",
+            data={"text": "My answer"},
+            headers=STUDENT_HEADERS,
+        )
+    submission_id = r.json()["id"]
+
+    # Simulate worker setting AI grading
+    from app.repositories.submissions import update_grading
+    from app.db.mongo import get_db
+    await update_grading(get_db(), submission_id, "pending_teacher", {
+        "score": 9, "max_score": 20, "feedback": "AI says great", "rubric_breakdown": [],
+    })
+
+    r = await client.get(
+        f"/api/v1/submissions/{submission_id}",
+        headers=STUDENT_HEADERS,
+    )
+    assert r.status_code == 200
+    assert r.json()["grading"]["ai"] is None
+    assert r.json()["status"] == "pending_teacher"
