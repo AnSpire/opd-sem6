@@ -14,6 +14,7 @@ from app.config import settings
 from app.db import arq_pool as arq_pool_module
 from app.db import mongo, postgres
 from app.repositories.submissions import ensure_indexes
+from app.services import stats as stats_service
 from app.services.storage import ensure_bucket
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,9 @@ async def lifespan(app: FastAPI):
     await ensure_indexes(mongo.get_db())
     await _ping(ensure_bucket(), "minio")
     arq_pool_module.pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+
+    async with postgres.AsyncSessionLocal() as session:
+        await stats_service.register_module(session)
 
     yield
 

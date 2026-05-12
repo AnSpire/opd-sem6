@@ -4,6 +4,7 @@ import logging
 import time
 from datetime import datetime, timezone
 
+from arq import cron
 from arq.connections import RedisSettings
 from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -14,6 +15,7 @@ from app.repositories import submissions as sub_repo
 from app.services import ai_grader
 from app.services import assignments as assignment_service
 from app.services import homework as hw_service
+from app.services import stats as stats_service
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +106,14 @@ async def grade_submission(ctx: dict, submission_id: str) -> None:
         )
 
 
+async def run_send_metrics(ctx: dict) -> None:
+    async with ctx["session_factory"]() as session:
+        await stats_service.send_metrics(session, ctx["db"])
+
+
 class WorkerSettings:
     functions = [grade_submission]
+    cron_jobs = [cron(run_send_metrics, minute={0, 10, 20, 30, 40, 50})]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)

@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     minio_bucket: str = "homework-attachments"
     proxy_url: str | None = None
     gemini_api_key: str | None = None
+    stats_service_url: str | None = None
+    stats_module_name: str = "homework-widget"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
