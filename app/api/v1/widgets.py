@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.access import require_teacher, require_widget_owner
@@ -19,6 +19,8 @@ async def create_widget(
     session: AsyncSession = Depends(get_session),
 ):
     require_teacher(user)
+    if user.board_id is not None and body.board_id != user.board_id:
+        raise HTTPException(status_code=400, detail="board_id in body does not match X-Board-Id header")
     widget, created = await widget_service.upsert_widget(session, body.id, body.board_id, user.user_id)
     if created:
         await emit_widget_updated(session, widget.id, "widget_created")

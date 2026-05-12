@@ -11,6 +11,7 @@ from app.api.v1 import router as api_v1_router
 from app.config import settings
 from app.db import mongo, postgres
 from app.repositories.submissions import ensure_indexes
+from app.services.storage import ensure_bucket
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
     await _ping(redis_client.ping(), "redis")
     await redis_client.aclose()
     await ensure_indexes(mongo.get_db())
+    await _ping(ensure_bucket(), "minio")
 
     yield
 
