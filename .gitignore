@@ -1,0 +1,48 @@
+# Env files — содержат секреты
+.env
+.env.test
+.env.local
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# uv
+.uv/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy / type checkers
+.mypy_cache/
+.pyright/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MinIO local data (если запускаешь без Docker)
+minio_data/
+
+# Alembic bytecode (migrations сами по себе нужны)
+alembic/__pycache__/
+alembic/versions/__pycache__/
