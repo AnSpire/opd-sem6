@@ -26,6 +26,7 @@ class SubmissionOut(BaseModel):
     status: str
     payload: dict
     grading: dict
+    attempt_score: int | None = None
     effective_score: int | None = None
 
     @field_validator("id", mode="before")

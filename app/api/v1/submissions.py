@@ -57,6 +57,8 @@ def _effective_score(attempts: list[dict], strategy: FinalScoreStrategy) -> int 
 
 
 def _to_out(doc: dict, effective_score: int | None) -> SubmissionOut:
+    final = doc.get("grading", {}).get("final")
+    attempt_score = final["score"] if final is not None else None
     return SubmissionOut(
         id=str(doc["_id"]),
         assignment_id=doc["assignment_id"],
@@ -70,6 +72,7 @@ def _to_out(doc: dict, effective_score: int | None) -> SubmissionOut:
         status=doc["status"],
         payload=doc["payload"],
         grading=doc["grading"],
+        attempt_score=attempt_score,
         effective_score=effective_score,
     )
 
