@@ -336,18 +336,11 @@ MinIO bucket `homework-attachments`. Ключи: `submissions/{widget_id}/{submi
 **~~Этап 6 — интерфейс препода~~ ✅ ГОТОВО.**
 Реализовано: `GradeSubmissionBody` в `app/schemas/submission.py`; `set_final_grade()` в `app/repositories/submissions.py`; `_to_out(hide_ai=False)` — параметр скрывает `grading.ai` для студентов; `PATCH /submissions/{id}/grade` — `accept_ai=true` копирует AI-оценку, `accept_ai=false` требует явных `score`/`feedback`, статус → `graded`; `GET /submissions/{id}` и `GET /assignments/{id}/submissions` передают `hide_ai=(role != "teacher")`. Итого 105 тестов — все зелёные.
 
-**Этап 7 — StatService (1 день).**
-- `app/services/stats.py` — `register_module()`: `POST /api/stats/module/create` через прокси, сохранение `module_id`/`token` в таблицу `stats_module`; идемпотентно (если запись есть — пропуск).
-- ARQ крон-задача `send_metrics()` (каждые N минут): агрегация по активным виджетам (`widgetId`, `assignmentsCount`, `submissionsCount`, `gradedCount`, `averageScore`, `lastActivityAt`), `PUT /api/stats/module/metrics`.
-- Обработка ответов StatService: 401 → перерегистрация (`register_module()`); 429 → `asyncio.sleep(Retry-After)`; 404 → пропуск виджета.
-- Запуск `register_module()` при старте api через lifespan (после проверки соединений).
+**~~Этап 7 — StatService~~ ✅ ГОТОВО.**
+Реализовано: `app/services/stats.py` — `register_module()` (идемпотентно, POST к StatService, сохраняет `module_id`/`token` в PG), `send_metrics()` (агрегирует по всем виджетам из PG+Mongo, PUT с Bearer-токеном); обработка 401 → перерегистрация, 429 → `asyncio.sleep(Retry-After)`, 404 → пропуск; `app/workers/arq_worker.py` — cron `run_send_metrics` каждые 10 мин (6 вызовов/час < лимита 12); `app/main.py` — `register_module()` в lifespan при старте; `app/config.py` — поля `stats_service_url`, `stats_module_name`. Если `STATS_SERVICE_URL` не задан — no-op.
 
-**Этап 8 — тесты и доводка (2 дня).**
-- Интеграционные тесты (pytest + `AsyncClient`) ключевых сценариев: создание виджета → задание → сабмишен теста → авто-грейдинг; домашка → `pending_ai` → grade препода.
-- Проверка изоляции student/teacher: student не получает `correct_answer`, не видит чужие сабмишены, не видит AI-оценку.
-- OpenAPI: теги, `summary`, примеры схем для основных эндпоинтов.
-- `README.md` — инструкция запуска (`docker compose up --build`), переменные окружения, примеры curl-запросов.
-- Финальный прогон `pytest` и `docker compose up` smoke-проверка всего стека.
+**~~Этап 8 — тесты и доводка~~ ✅ ГОТОВО.**
+Реализовано: `tests/test_grade_submission.py` (8 тестов: accept_ai/override/403/409/422/изоляция); `tests/test_submissions_homework.py` — +2 теста на скрытие `grading.ai` от студента; все роутеры уже имели `tags`+`summary`; `README.md` — быстрый старт, таблица переменных окружения, запуск тестов, ручное тестирование, архитектура. Итого **115 тестов — все зелёные**.
 
 # Исправления в тестовом окружении
 

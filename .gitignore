@@ -46,3 +46,7 @@ minio_data/
 # Alembic bytecode (migrations сами по себе нужны)
 alembic/__pycache__/
 alembic/versions/__pycache__/
+
+# Docs (кроме README)
+*.md
+!README.md
