@@ -267,3 +267,17 @@ async def test_submit_homework_attempt_increments(client, hw_details, hw_assignm
     assert r2.status_code == 201
     assert r1.json()["attempt_number"] == 1
     assert r2.json()["attempt_number"] == 2
+
+
+async def test_submit_homework_enqueues_grade_job(client, hw_details, hw_assignment):
+    mock_pool = AsyncMock()
+    with patch("app.db.arq_pool.pool", mock_pool), \
+         patch("app.services.storage.upload_object", new_callable=AsyncMock):
+        r = await client.post(
+            f"/api/v1/assignments/{hw_assignment['id']}/submissions",
+            data={"text": "My answer"},
+            headers=STUDENT_HEADERS,
+        )
+    assert r.status_code == 201
+    submission_id = r.json()["id"]
+    mock_pool.enqueue_job.assert_awaited_once_with("grade_submission", submission_id)

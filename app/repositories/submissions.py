@@ -51,6 +51,21 @@ async def count_attempts(
     )
 
 
+async def update_grading(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    status: str,
+    ai_grading: dict | None = None,
+) -> None:
+    fields: dict = {"status": status}
+    if ai_grading is not None:
+        fields["grading.ai"] = ai_grading
+    await db.submissions.update_one(
+        {"_id": ObjectId(submission_id)},
+        {"$set": fields},
+    )
+
+
 async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.submissions.create_index(
         [("assignment_id", 1), ("student_user_id", 1), ("attempt_number", 1)],

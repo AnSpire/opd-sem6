@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.access import require_widget_owner
+from app.db import arq_pool as arq_pool_module
 from app.db.mongo import get_db
 from app.db.postgres import get_session
 from app.deps import UserContext, get_current_user
@@ -224,6 +225,9 @@ async def _create_homework_submission(
         "grading": {"ai": None, "final": None},
     }
     created = await sub_repo.create_submission(db, doc)
+
+    if arq_pool_module.pool is not None:
+        await arq_pool_module.pool.enqueue_job("grade_submission", submission_id_str)
 
     all_attempts = await sub_repo.list_by_assignment_and_student(db, assignment_id, user.user_id)
     eff = _effective_score(all_attempts, assignment.final_score_strategy)

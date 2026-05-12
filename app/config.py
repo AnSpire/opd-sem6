@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     minio_secret_key: str
     minio_bucket: str = "homework-attachments"
     proxy_url: str | None = None
+    gemini_api_key: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

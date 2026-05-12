@@ -52,6 +52,21 @@ async def delete_object(key: str) -> None:
     await loop.run_in_executor(None, fn)
 
 
+async def download_object(key: str) -> bytes:
+    loop = asyncio.get_running_loop()
+    client = _get_client()
+
+    def _fetch() -> bytes:
+        resp = client.get_object(settings.minio_bucket, key)
+        try:
+            return resp.read()
+        finally:
+            resp.close()
+            resp.release_conn()
+
+    return await loop.run_in_executor(None, _fetch)
+
+
 async def presigned_get_url(key: str, ttl: int = 300) -> str:
     loop = asyncio.get_running_loop()
     client = _get_client()

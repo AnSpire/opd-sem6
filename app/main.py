@@ -3,12 +3,15 @@ import logging
 from contextlib import asynccontextmanager
 
 import redis.asyncio as aioredis
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy import text
 
 from app.api.v1 import router as api_v1_router
 from app.config import settings
+from app.db import arq_pool as arq_pool_module
 from app.db import mongo, postgres
 from app.repositories.submissions import ensure_indexes
 from app.services.storage import ensure_bucket
@@ -36,9 +39,12 @@ async def lifespan(app: FastAPI):
     await redis_client.aclose()
     await ensure_indexes(mongo.get_db())
     await _ping(ensure_bucket(), "minio")
+    arq_pool_module.pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
 
     yield
 
+    if arq_pool_module.pool is not None:
+        await arq_pool_module.pool.aclose()
     mongo.client.close()
     await postgres.engine.dispose()
 
