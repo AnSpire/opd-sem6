@@ -327,25 +327,14 @@ MinIO bucket `homework-attachments`. Ключи: `submissions/{widget_id}/{submi
 **~~Этап 3 — тесты~~ ✅ ГОТОВО.**
 Реализовано: `app/schemas/question.py`, `app/services/questions.py`, роутер `app/api/v1/questions.py` — CRUD вопросов, `correct_answer` скрыт для student; `app/repositories/submissions.py` — полный репозиторий с MongoDB-индексами; `app/services/auto_grader.py` — авто-грейдинг single/multi/bool/short_text; `app/schemas/submission.py`; `app/api/v1/submissions.py` — POST/GET сабмишенов для тестов, дедлайны, max_attempts, final_score_strategy (last/best/average); `tests/test_questions.py` (15 тестов), `tests/test_submissions_test.py` (17 тестов). Итого 68 тестов — все зелёные.
 
-**Этап 4 — домашки + файлы (2 дня).**
-- `app/schemas/homework.py` — `HomeworkDetailsCreate/Update/Out`; `app/api/v1/homework.py` — `PUT /assignments/{id}/homework`, `GET /assignments/{id}/homework`.
-- `app/services/storage.py` — обёртка над MinIO: `upload_object(bucket, key, data, content_type)`, `delete_object(key)`, `presigned_get_url(key, ttl=300)`; создание бакета при старте если не существует.
-- `app/api/v1/submissions.py` (дополнение) — `POST /assignments/{id}/submissions` для типа `homework`: multipart/form-data, приём до 5 файлов ≤ 10 МБ, загрузка в MinIO по схеме `submissions/{widget_id}/{submission_id}/{uuid}_{filename}`, статус → `pending_ai`.
-- `app/api/v1/attachments.py` — `GET /attachments/{submission_id}/{attachment_index}`: проверка доступа, возврат presigned URL (TTL 5 мин).
-- Проверка дедлайна при сабмишне: `deadline` + `allow_late_submissions` → `is_late=true` или 409.
+**~~Этап 4 — домашки + файлы~~ ✅ ГОТОВО.**
+Реализовано: `app/schemas/homework.py`, `app/services/homework.py` — upsert homework_details; `app/api/v1/homework.py` — `PUT/GET /assignments/{id}/homework`; `app/services/storage.py` — MinIO-обёртка (`upload_object`, `delete_object`, `download_object`, `presigned_get_url`) через `run_in_executor`; `app/api/v1/submissions.py` — multipart homework-сабмишены, до 5 файлов ≤ 10 МБ, контент-тип диспатч (JSON → test, остальное → homework); `app/api/v1/attachments.py` — presigned URL с проверкой доступа; дедлайн + `allow_late_submissions` + `max_attempts`. Тесты: `test_homework.py` (11), `test_submissions_homework.py` (12), `test_attachments.py` (7).
 
-**Этап 5 — AI-grader (2–3 дня).**
-- `app/services/proxy_client.py` — тонкий `httpx.AsyncClient` с `proxies=settings.proxy_url`; используется для всех исходящих запросов.
-- `app/services/ai_grader.py` — вызов Gemini 2.5 Flash через `google-genai` SDK + прокси: формирование промпта (текст + файлы multimodal), structured output по JSON-схеме `{score, feedback, rubric_breakdown}`, temperature 0.2.
-- `app/repositories/ai_logs.py` — `create_log(submission_id, request, response, latency_ms, status, error)`.
-- `app/workers/arq_worker.py` — задача `grade_submission(ctx, submission_id)`: загружаем сабмишен, вызываем `ai_grader`, пишем результат в `grading.ai`, статус → `pending_teacher`; при ошибке парсинга/таймауте — статус `pending_teacher` без AI-данных, лог с error.
-- Регистрация задачи в `WorkerSettings.functions`; при создании homework-сабмишена ставим задачу в очередь через `arq.create_pool`.
+**~~Этап 5 — AI-grader~~ ✅ ГОТОВО.**
+Реализовано: `app/services/proxy_client.py` — httpx-клиент с опциональным прокси; `app/services/ai_grader.py` — Gemini 2.5 Flash через `google-genai` SDK, multimodal (текст + PDF/image из MinIO), structured output `GradingResult`, `run_in_executor` для синхронного SDK; `app/repositories/ai_logs.py` — запись каждого вызова; `app/workers/arq_worker.py` — задача `grade_submission`: ok → `grading.ai` + `pending_teacher`; ValueError → `parse_error`; TimeoutError → `timeout`; Exception → `api_error`; всегда пишет ai_log; `app/db/arq_pool.py` — синглтон пула; lifespan инициализирует пул и enqueue при homework-сабмишене. Ключевое решение: воркер-контейнер нужно пересоздавать при первом добавлении функций (`docker compose up -d worker`). Тесты: `test_ai_grader.py` (4), `test_arq_worker.py` (4).
 
-**Этап 6 — интерфейс препода (1 день).**
-- `app/schemas/submission.py` — `SubmissionOut` с двумя проекциями: для teacher (включает `grading.ai`) и для student (только `grading.final` после утверждения, статус `pending_teacher` → «на проверке»).
-- `PATCH /submissions/{id}/grade` — тело `{score?, feedback?, accept_ai: bool}`: если `accept_ai=true` — копируем AI-оценку в `final`; иначе берём переданные `score`/`feedback`; статус → `graded`.
-- `GET /assignments/{id}/submissions` — teacher видит все, student только свои (`student_user_id == user.user_id`).
-- `GET /submissions/{id}` — проверка доступа: teacher-владелец виджета или student-автор сабмишена.
+**~~Этап 6 — интерфейс препода~~ ✅ ГОТОВО.**
+Реализовано: `GradeSubmissionBody` в `app/schemas/submission.py`; `set_final_grade()` в `app/repositories/submissions.py`; `_to_out(hide_ai=False)` — параметр скрывает `grading.ai` для студентов; `PATCH /submissions/{id}/grade` — `accept_ai=true` копирует AI-оценку, `accept_ai=false` требует явных `score`/`feedback`, статус → `graded`; `GET /submissions/{id}` и `GET /assignments/{id}/submissions` передают `hide_ai=(role != "teacher")`. Итого 105 тестов — все зелёные.
 
 **Этап 7 — StatService (1 день).**
 - `app/services/stats.py` — `register_module()`: `POST /api/stats/module/create` через прокси, сохранение `module_id`/`token` в таблицу `stats_module`; идемпотентно (если запись есть — пропуск).

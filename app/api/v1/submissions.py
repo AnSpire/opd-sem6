@@ -13,7 +13,7 @@ from app.db.postgres import get_session
 from app.deps import UserContext, get_current_user
 from app.models.assignment import AssignmentType, FinalScoreStrategy
 from app.repositories import submissions as sub_repo
-from app.schemas.submission import SubmissionOut, TestSubmissionCreate
+from app.schemas.submission import GradeSubmissionBody, SubmissionOut, TestSubmissionCreate
 from app.services import assignments as assignment_service
 from app.services import homework as hw_service
 from app.services import questions as question_service
@@ -57,9 +57,12 @@ def _effective_score(attempts: list[dict], strategy: FinalScoreStrategy) -> int 
     return None
 
 
-def _to_out(doc: dict, effective_score: int | None) -> SubmissionOut:
+def _to_out(doc: dict, effective_score: int | None, hide_ai: bool = False) -> SubmissionOut:
     final = doc.get("grading", {}).get("final")
     attempt_score = final["score"] if final is not None else None
+    grading = doc["grading"]
+    if hide_ai:
+        grading = {**grading, "ai": None}
     return SubmissionOut(
         id=str(doc["_id"]),
         assignment_id=doc["assignment_id"],
@@ -72,7 +75,7 @@ def _to_out(doc: dict, effective_score: int | None) -> SubmissionOut:
         is_late=doc["is_late"],
         status=doc["status"],
         payload=doc["payload"],
-        grading=doc["grading"],
+        grading=grading,
         attempt_score=attempt_score,
         effective_score=effective_score,
     )
@@ -131,7 +134,7 @@ async def _create_test_submission(
 
     all_attempts = await sub_repo.list_by_assignment_and_student(db, assignment_id, user.user_id)
     eff = _effective_score(all_attempts, assignment.final_score_strategy)
-    return _to_out(created, eff)
+    return _to_out(created, eff)  # test submissions have no AI grading
 
 
 async def _create_homework_submission(
@@ -231,7 +234,7 @@ async def _create_homework_submission(
 
     all_attempts = await sub_repo.list_by_assignment_and_student(db, assignment_id, user.user_id)
     eff = _effective_score(all_attempts, assignment.final_score_strategy)
-    return _to_out(created, eff)
+    return _to_out(created, eff, hide_ai=True)  # student submits, never sees AI grading
 
 
 @router.post(
@@ -275,13 +278,14 @@ async def list_submissions(
     else:
         docs = await sub_repo.list_by_assignment_and_student(db, assignment_id, user.user_id)
 
+    hide_ai = user.role != "teacher"
     result = []
     for doc in docs:
         all_attempts = await sub_repo.list_by_assignment_and_student(
             db, assignment_id, doc["student_user_id"]
         )
         eff = _effective_score(all_attempts, assignment.final_score_strategy)
-        result.append(_to_out(doc, eff))
+        result.append(_to_out(doc, eff, hide_ai=hide_ai))
     return result
 
 
@@ -311,4 +315,57 @@ async def get_submission(
         db, doc["assignment_id"], doc["student_user_id"]
     )
     eff = _effective_score(all_attempts, assignment.final_score_strategy)
-    return _to_out(doc, eff)
+    return _to_out(doc, eff, hide_ai=(user.role != "teacher"))
+
+
+@router.patch(
+    "/submissions/{submission_id}/grade",
+    response_model=SubmissionOut,
+    summary="Выставить финальную оценку (только препод-владелец)",
+)
+async def grade_submission(
+    submission_id: str,
+    body: GradeSubmissionBody,
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    if user.role != "teacher":
+        raise HTTPException(status_code=403, detail="Only teachers can grade submissions")
+
+    doc = await sub_repo.get_by_id_or_404(db, submission_id)
+
+    if doc["type"] != "homework":
+        raise HTTPException(status_code=422, detail="Only homework submissions can be manually graded")
+
+    assignment = await assignment_service.get_assignment_or_404(session, doc["assignment_id"])
+    widget = await widget_service.get_widget_or_404(session, assignment.widget_id)
+    require_widget_owner(widget, user)
+
+    if body.accept_ai:
+        ai = doc.get("grading", {}).get("ai")
+        if not ai:
+            raise HTTPException(status_code=409, detail="No AI grading available to accept")
+        score = ai["score"]
+        feedback = ai.get("feedback")
+    else:
+        if body.score is None:
+            raise HTTPException(status_code=422, detail="score is required when accept_ai=false")
+        score = body.score
+        feedback = body.feedback
+
+    final = {
+        "score": score,
+        "feedback": feedback,
+        "teacher_user_id": user.user_id,
+        "graded_at": datetime.now(timezone.utc),
+        "accepted_ai": body.accept_ai,
+    }
+    await sub_repo.set_final_grade(db, submission_id, final)
+
+    updated = await sub_repo.get_by_id_or_404(db, submission_id)
+    all_attempts = await sub_repo.list_by_assignment_and_student(
+        db, doc["assignment_id"], doc["student_user_id"]
+    )
+    eff = _effective_score(all_attempts, assignment.final_score_strategy)
+    return _to_out(updated, eff)  # teacher sees full grading including ai

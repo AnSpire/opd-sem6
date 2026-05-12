@@ -33,3 +33,9 @@ class SubmissionOut(BaseModel):
     @classmethod
     def coerce_object_id(cls, v: Any) -> str:
         return str(v)
+
+
+class GradeSubmissionBody(BaseModel):
+    score: int | None = None
+    feedback: str | None = None
+    accept_ai: bool

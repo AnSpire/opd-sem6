@@ -66,6 +66,17 @@ async def update_grading(
     )
 
 
+async def set_final_grade(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    final_grading: dict,
+) -> None:
+    await db.submissions.update_one(
+        {"_id": ObjectId(submission_id)},
+        {"$set": {"status": "graded", "grading.final": final_grading}},
+    )
+
+
 async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.submissions.create_index(
         [("assignment_id", 1), ("student_user_id", 1), ("attempt_number", 1)],
