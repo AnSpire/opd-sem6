@@ -69,10 +69,13 @@ async def clean_db(app_startup):
     conn = await asyncpg.connect(_pg_dsn())
     try:
         await conn.execute("TRUNCATE TABLE widgets CASCADE")
+        await conn.execute("TRUNCATE TABLE conversations, user_profiles")
     finally:
         await conn.close()
     from app.db.mongo import get_db
-    await get_db().submissions.delete_many({})
+    db = get_db()
+    await db.submissions.delete_many({})
+    await db.chat_messages.delete_many({})
     yield
 
 

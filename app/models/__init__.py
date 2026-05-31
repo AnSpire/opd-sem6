@@ -1,8 +1,10 @@
 from app.models.assignment import Assignment, AssignmentType, FinalScoreStrategy
 from app.models.base import Base
+from app.models.conversation import Conversation
 from app.models.homework_details import HomeworkDetails
 from app.models.question import Question, QuestionType, ShortTextMatch
 from app.models.stats_module import StatsModule
+from app.models.user_profile import UserProfile
 from app.models.widget import Widget
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "ShortTextMatch",
     "HomeworkDetails",
     "StatsModule",
+    "UserProfile",
+    "Conversation",
 ]

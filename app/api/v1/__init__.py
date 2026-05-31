@@ -2,10 +2,13 @@ from fastapi import APIRouter
 
 from app.api.v1.assignments import router as assignments_router
 from app.api.v1.attachments import router as attachments_router
+from app.api.v1.chat_ws import router as chat_ws_router
+from app.api.v1.conversations import router as conversations_router
 from app.api.v1.health import router as health_router
 from app.api.v1.homework import router as homework_router
 from app.api.v1.questions import router as questions_router
 from app.api.v1.submissions import router as submissions_router
+from app.api.v1.users import router as users_router
 from app.api.v1.widgets import router as widgets_router
 
 router = APIRouter(prefix="/api/v1")
@@ -16,3 +19,6 @@ router.include_router(questions_router)
 router.include_router(homework_router)
 router.include_router(submissions_router)
 router.include_router(attachments_router)
+router.include_router(users_router)
+router.include_router(conversations_router)
+router.include_router(chat_ws_router)

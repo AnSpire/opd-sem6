@@ -12,7 +12,8 @@ from sqlalchemy import text
 from app.api.v1 import router as api_v1_router
 from app.config import settings
 from app.db import arq_pool as arq_pool_module
-from app.db import mongo, postgres
+from app.db import mongo, postgres, redis_pub as redis_pub_module
+from app.repositories.chat import ensure_chat_indexes
 from app.repositories.submissions import ensure_indexes
 from app.services import stats as stats_service
 from app.services.storage import ensure_bucket
@@ -39,8 +40,10 @@ async def lifespan(app: FastAPI):
     await _ping(redis_client.ping(), "redis")
     await redis_client.aclose()
     await ensure_indexes(mongo.get_db())
+    await ensure_chat_indexes(mongo.get_db())
     await _ping(ensure_bucket(), "minio")
     arq_pool_module.pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    redis_pub_module.client = aioredis.from_url(settings.redis_url)
 
     async with postgres.AsyncSessionLocal() as session:
         await stats_service.register_module(session)
@@ -49,6 +52,8 @@ async def lifespan(app: FastAPI):
 
     if arq_pool_module.pool is not None:
         await arq_pool_module.pool.aclose()
+    if redis_pub_module.client is not None:
+        await redis_pub_module.client.aclose()
     mongo.client.close()
     await postgres.engine.dispose()
 
